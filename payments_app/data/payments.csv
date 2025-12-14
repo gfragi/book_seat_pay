@@ -1,1 +1,3 @@
-timestamp,parent_name,email,child_class,child_tickets,adult_tickets,total_tickets,total_amount,payment_method,payment_code,payment_status,category
+timestamp,parent_name,email,child_class,child_tickets,adult_tickets,total_tickets,total_amount,payment_method,payment_code,payment_status,category,priority_number
+2025-12-14 17:25:32,Ηλέκτρα Σιφακάκη,electrasif@gmail.com,Γ,2,1,3,30.0,IRIS,EVT-001,pending,interest,0
+2025-12-14 17:34:39,Fragiadakis Giorgos,gfragi@gmail.com,Γ,1,1,2,0.0,,,waitlist,waitlist,1
