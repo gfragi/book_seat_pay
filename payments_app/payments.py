@@ -141,7 +141,7 @@ with col_logo:
     if LOGO_FILE.exists():
         st.image(str(LOGO_FILE), use_container_width=True)
 with col_text:
-    st.markdown("### Σύλλογος Γονέων & Κηδεμόνων")
+    st.markdown("### Σύλλογος Γονέων & Κηδεμόνων 2ου Νηπιαγωγείου Παπάγου")
     st.markdown(f"# 🎭 {EVENT_TITLE}")
     st.markdown(
         f"**Ημερομηνία & ώρα:** {EVENT_DATE_LABEL}<br>"
@@ -151,7 +151,7 @@ with col_text:
     )
 
 st.markdown("---")
-st.subheader("Κρατήσεις & Πληρωμές Εισιτηρίων")
+# st.subheader("Κρατήσεις & Πληρωμές Εισιτηρίων")
 
 df = load_data()
 interest_df = load_interest()
@@ -174,7 +174,7 @@ mode = st.sidebar.radio(
 
 # ========== MODE 1: PARENTS ==========
 if mode == "Γονείς - Δήλωση & Πληρωμή":
-    st.subheader("Φόρμα συμμετοχής γονέα")
+    st.subheader("Κρατήσεις Εισιτηρίων για Γονείς & Κηδεμόνες")
 
     # Dashboard
     c1, c2, c3 = st.columns(3)
@@ -199,7 +199,7 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
 
     st.info(
         "Για λόγους προστασίας δεδομένων, χρειάζεται πρώτα να συμπληρώσετε το email σας. "
-        "Με αυτό θα δούμε μόνο τη δική σας δήλωση."
+        "Με αυτό θα δείτε μόνο τη δική σας δήλωση."
     )
 
     email = st.text_input("Email (όπως το δηλώσατε στη φόρμα ενδιαφέροντος, αν έχετε δηλώσει)")
