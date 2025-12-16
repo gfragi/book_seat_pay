@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
 from pathlib import Path
 from datetime import datetime, date
 
@@ -8,7 +9,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-DATA_FILE = DATA_DIR / "payments.csv"
+DB_FILE = DATA_DIR / "payments.sqlite3"
+LEGACY_CSV = DATA_DIR / "payments.csv"  # optional one-time import if DB is empty
 INTEREST_FILE = DATA_DIR / "interest.csv"
 
 LOGO_FILE = BASE_DIR / "logo_syllogos.png"
@@ -29,67 +31,116 @@ ADMIN_PASSWORD = "syllogos2025"
 # ---------- HELPERS ----------
 def validate_payments_csv(df: pd.DataFrame) -> tuple[bool, str]:
     required = [
-        "timestamp","parent_name","email","child_class",
-        "child_tickets","adult_tickets","total_tickets",
-        "total_amount","payment_method","payment_code",
-        "payment_status","category","priority_number"
+        "timestamp", "parent_name", "email", "child_class",
+        "child_tickets", "adult_tickets", "total_tickets",
+        "total_amount", "payment_method", "payment_code",
+        "payment_status", "category", "priority_number"
     ]
     missing = [c for c in required if c not in df.columns]
     if missing:
         return False, f"Λείπουν στήλες: {', '.join(missing)}"
 
-    # basic cleanup / types
-    for col in ["child_tickets","adult_tickets","total_tickets","priority_number"]:
+    for col in ["child_tickets", "adult_tickets", "total_tickets", "priority_number"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
     df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce").fillna(0).astype(float)
 
-    # normalize strings
-    for col in ["parent_name","email","child_class","payment_method","payment_code","payment_status","category"]:
+    for col in ["parent_name", "email", "child_class", "payment_method", "payment_code", "payment_status", "category"]:
         df[col] = df[col].astype(str).fillna("").str.strip()
 
     return True, ""
 
-def load_data() -> pd.DataFrame:
-    if DATA_FILE.exists():
-        df = pd.read_csv(DATA_FILE, dtype={"payment_code": str})
-    else:
-        df = pd.DataFrame(
-            columns=[
-                "timestamp",
-                "parent_name",
-                "email",
-                "child_class",
-                "child_tickets",
-                "adult_tickets",
-                "total_tickets",
-                "total_amount",
-                "payment_method",
-                "payment_code",
-                "payment_status",   # pending / paid / waitlist / cancelled
-                "category",         # interest / waitlist
-                "priority_number",  # σειρά προτεραιότητας (κυρίως για waitlist)
-            ]
+
+@st.cache_resource
+def get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS payments (
+            timestamp TEXT,
+            parent_name TEXT,
+            email TEXT,
+            child_class TEXT,
+            child_tickets INTEGER,
+            adult_tickets INTEGER,
+            total_tickets INTEGER,
+            total_amount REAL,
+            payment_method TEXT,
+            payment_code TEXT,
+            payment_status TEXT,
+            category TEXT,
+            priority_number INTEGER
         )
-        df.to_csv(DATA_FILE, index=False)
+    """)
+    conn.commit()
+    return conn
 
-    # τύποι/στήλες
+
+def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
+    required = [
+        "timestamp", "parent_name", "email", "child_class",
+        "child_tickets", "adult_tickets", "total_tickets",
+        "total_amount", "payment_method", "payment_code",
+        "payment_status", "category", "priority_number"
+    ]
+
+    for c in required:
+        if c not in df.columns:
+            if c in ["child_tickets", "adult_tickets", "total_tickets", "priority_number"]:
+                df[c] = 0
+            elif c == "total_amount":
+                df[c] = 0.0
+            else:
+                df[c] = ""
+
     for col in ["child_tickets", "adult_tickets", "total_tickets", "priority_number"]:
-        if col in df.columns:
-            df[col] = df[col].fillna(0).astype(int)
-    if "total_amount" in df.columns:
-        df["total_amount"] = df["total_amount"].fillna(0).astype(float)
-    if "payment_status" not in df.columns:
-        df["payment_status"] = "pending"
-    if "category" not in df.columns:
-        df["category"] = "interest"
-    if "priority_number" not in df.columns:
-        df["priority_number"] = 0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+    df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce").fillna(0).astype(float)
 
-    return df
+    for col in ["timestamp", "parent_name", "email", "child_class", "payment_method", "payment_code", "payment_status", "category"]:
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
+    df["payment_status"] = df["payment_status"].replace("", "pending")
+    df["category"] = df["category"].replace("", "interest")
+    df["priority_number"] = df["priority_number"].fillna(0).astype(int)
+
+    return df[required]
+
+
+def _maybe_import_legacy_csv():
+    conn = get_conn()
+    n = pd.read_sql_query("SELECT COUNT(*) AS n FROM payments", conn).iloc[0]["n"]
+    if int(n) > 0:
+        return
+    if LEGACY_CSV.exists():
+        try:
+            df_legacy = pd.read_csv(LEGACY_CSV, dtype={"payment_code": str})
+            df_legacy = _ensure_columns(df_legacy)
+            df_legacy.to_sql("payments", conn, if_exists="append", index=False)
+            conn.commit()
+        except Exception:
+            pass
+
+
+def load_data() -> pd.DataFrame:
+    conn = get_conn()
+    _maybe_import_legacy_csv()
+    df = pd.read_sql_query("SELECT * FROM payments", conn)
+    if df.empty:
+        df = pd.DataFrame(columns=[
+            "timestamp", "parent_name", "email", "child_class",
+            "child_tickets", "adult_tickets", "total_tickets",
+            "total_amount", "payment_method", "payment_code",
+            "payment_status", "category", "priority_number"
+        ])
+    return _ensure_columns(df)
 
 
 def save_data(df: pd.DataFrame):
-    df.to_csv(DATA_FILE, index=False)
+    conn = get_conn()
+    df2 = _ensure_columns(df.copy())
+    conn.execute("DELETE FROM payments")
+    conn.commit()
+    df2.to_sql("payments", conn, if_exists="append", index=False)
+    conn.commit()
 
 
 def generate_payment_code(df: pd.DataFrame) -> str:
@@ -157,7 +208,6 @@ def get_next_priority(df: pd.DataFrame) -> int:
 # ---------- STREAMLIT UI ----------
 st.set_page_config(page_title="Θεατρική Παράσταση - Κρατήσεις", page_icon="🎭")
 
-# Header με logo + info
 col_logo, col_text = st.columns([1, 3])
 with col_logo:
     if LOGO_FILE.exists():
@@ -173,7 +223,6 @@ with col_text:
     )
 
 st.markdown("---")
-# st.subheader("Κρατήσεις & Πληρωμές Εισιτηρίων")
 
 df = load_data()
 interest_df = load_interest()
@@ -198,12 +247,11 @@ mode = st.sidebar.radio(
 if mode == "Γονείς - Δήλωση & Πληρωμή":
     st.subheader("Κρατήσεις Εισιτηρίων για Γονείς & Κηδεμόνες")
 
-    # Dashboard
     c1, c2, c3 = st.columns(3)
     c1.metric("Πληρωμένες θέσεις", paid_seats)
     c2.metric("Σε εκκρεμότητα", pending_seats)
     c3.metric("Διαθέσιμες", seats_left)
-    
+
     with st.expander("ℹ️ Τι σημαίνουν οι όροι;"):
         st.markdown(
             """
@@ -225,7 +273,6 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
             Επιτρέπεται μόνο **προς τα κάτω**, όχι προς τα πάνω, για λόγους ίσης μεταχείρισης.
             """
         )
-
 
     st.progress(seats_used / MAX_SEATS if MAX_SEATS > 0 else 0)
     st.caption(f"Δεσμευμένες θέσεις: {seats_used} / {MAX_SEATS}")
@@ -253,17 +300,14 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
         interest_row = get_interest_for_email(interest_df, email)
         booking_row, booking_idx = get_booking_for_email(df, email)
 
-        # Κατηγορία: interest ή waitlist
         if booking_row is not None:
             category = booking_row["category"]
         else:
             category = "interest" if interest_row is not None else "waitlist"
 
-        # Already paid?
         if booking_row is not None and booking_row["payment_status"] == "paid" and category == "interest":
             st.error("Η κράτησή σας έχει ήδη μαρκαριστεί ως πληρωμένη. Για αλλαγές, επικοινωνήστε με τον Σύλλογο.")
         else:
-            # Μήνυμα για interest / waitlist
             if category == "interest":
                 if interest_row is not None:
                     st.success(
@@ -278,7 +322,6 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                     st.info("Έχετε ήδη καταχωρημένη κανονική κράτηση με αυτό το email.")
                 max_tickets_allowed = int(interest_row["total_tickets"]) if interest_row is not None else None
             else:
-                # waitlist
                 if booking_row is not None:
                     prio = int(booking_row.get("priority_number", 0))
                     msg = (
@@ -297,7 +340,6 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                     )
                 max_tickets_allowed = None
 
-            # Προεπιλογές φόρμας
             if booking_row is not None:
                 default_parent = booking_row["parent_name"]
                 default_class = booking_row["child_class"]
@@ -345,7 +387,7 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                     payment_method = st.radio(
                         "Τρόπος πληρωμής",
                         ["IRIS", "Revolut", "Μετρητά"],
-                        index=["IRIS", "Revolut", "Μετρητά"].index(default_method),
+                        index=["IRIS", "Revolut", "Μετρητά"].index(default_method) if default_method in ["IRIS","Revolut","Μετρητά"] else 0,
                         horizontal=True,
                     )
                 else:
@@ -376,24 +418,23 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                         f"από όσα είχατε δηλώσει αρχικά ({max_tickets_allowed})."
                     )
                 else:
-                    # Έλεγχος χωρητικότητας
                     df_current = load_data()
                     seats_used_now = compute_seats_used(df_current)
+
                     if category == "interest":
                         if booking_row is not None and booking_row["category"] == "interest":
                             seats_after = seats_used_now - previous_total + total_tickets
                         else:
                             seats_after = seats_used_now + total_tickets
+
                         if seats_after > MAX_SEATS:
                             available = MAX_SEATS - (seats_used_now - previous_total)
                             st.error(
                                 f"Δεν υπάρχουν αρκετές διαθέσιμες θέσεις για την αλλαγή αυτή. "
                                 f"Διαθέσιμες θέσεις: {max(available, 0)}."
                             )
-                            # δεν συνεχίζουμε σε αυτήν την περίπτωση
                         else:
                             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            # ενημέρωση / δημιουργία εγγραφής
                             if booking_row is not None:
                                 idx = booking_idx
                                 df_current.loc[idx, "timestamp"] = now
@@ -418,7 +459,6 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                                     df_current.loc[idx, "payment_status"] = "pending"
                             else:
                                 payment_code = generate_payment_code(df_current)
-                                priority_number = 0
                                 new_row = {
                                     "timestamp": now,
                                     "parent_name": parent_name.strip(),
@@ -432,7 +472,7 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                                     "payment_code": payment_code,
                                     "payment_status": "pending",
                                     "category": category,
-                                    "priority_number": priority_number,
+                                    "priority_number": 0,
                                 }
                                 df_current = pd.concat([df_current, pd.DataFrame([new_row])], ignore_index=True)
 
@@ -458,7 +498,6 @@ if mode == "Γονείς - Δήλωση & Πληρωμή":
                                     f"και αναφέρετε τον κωδικό `{payment_code}`."
                                 )
                     else:
-                        # waitlist: δεν δεσμεύει θέσεις, δεν χτυπάει MAX_SEATS
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         df_current = load_data()
                         if booking_row is not None:
@@ -529,18 +568,15 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
             f"**{PAYMENT_DEADLINE_LABEL}**."
         )
 
-
         st.markdown("---")
         st.markdown("### 💶 Σύνολα πληρωμών (μόνο πληρωμένες)")
 
         df_admin = load_data()
-
         paid = df_admin[
             (df_admin["payment_status"] == "paid") &
             (df_admin["category"] != "waitlist")
         ].copy()
 
-        # normalize payment_method text
         paid["payment_method"] = paid["payment_method"].fillna("").astype(str).str.strip().str.lower()
 
         def method_bucket(x: str) -> str:
@@ -567,9 +603,7 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
                 .reset_index()
                 .sort_values("total_eur", ascending=False)
         )
-
         st.dataframe(by_method, use_container_width=True)
-
 
         st.markdown("---")
         st.markdown("### ♻️ Επαναφορά πληρωμών από backup CSV (Admin)")
@@ -577,7 +611,7 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
         uploaded = st.file_uploader(
             "Ανέβασε payments backup CSV",
             type=["csv"],
-            help="Προσοχή: Αυτό θα αντικαταστήσει πλήρως το τρέχον payments.csv."
+            help="Προσοχή: Αυτό θα αντικαταστήσει πλήρως τα τρέχοντα δεδομένα (SQLite)."
         )
 
         col_a, col_b = st.columns([1, 2])
@@ -593,10 +627,13 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
                 if not ok:
                     st.error(f"Μη έγκυρο αρχείο: {msg}")
                 else:
-                    # optional: make a safety backup of current file
-                    if DATA_FILE.exists():
-                        backup_name = DATA_DIR / f"payments_backup_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                        DATA_FILE.replace(backup_name)
+                    # backup current DB file (best-effort)
+                    if DB_FILE.exists():
+                        backup_name = DATA_DIR / f"payments_backup_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sqlite3"
+                        try:
+                            DB_FILE.replace(backup_name)
+                        except Exception:
+                            pass
 
                     save_data(new_df)
                     st.success("✅ Η επαναφορά ολοκληρώθηκε. Κάνε refresh τη σελίδα για να δεις τα ενημερωμένα στοιχεία.")
@@ -606,16 +643,8 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
         st.markdown("---")
         st.markdown("### Αναζήτηση & Φίλτρα")
 
-        status_filter = st.selectbox(
-            "Φίλτρο κατάστασης",
-            ["Όλες", "pending", "paid", "waitlist"],
-            index=0,
-        )
-        category_filter = st.selectbox(
-            "Φίλτρο κατηγορίας",
-            ["Όλες", "interest", "waitlist"],
-            index=0,
-        )
+        status_filter = st.selectbox("Φίλτρο κατάστασης", ["Όλες", "pending", "paid", "waitlist"], index=0)
+        category_filter = st.selectbox("Φίλτρο κατηγορίας", ["Όλες", "interest", "waitlist"], index=0)
 
         df_view = df.copy()
         if status_filter != "Όλες":
@@ -633,10 +662,7 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
             df_view = df_view[mask]
 
         if not df_view.empty:
-            st.dataframe(
-                df_view.sort_values("timestamp", ascending=False),
-                use_container_width=True,
-            )
+            st.dataframe(df_view.sort_values("timestamp", ascending=False), use_container_width=True)
         else:
             st.info("Δεν βρέθηκαν εγγραφές με τα τρέχοντα φίλτρα.")
 
@@ -678,9 +704,7 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
             st.markdown("---")
             st.markdown("### Λίστα αναμονής (με σειρά προτεραιότητας)")
             st.dataframe(
-                waitlist_df.sort_values(
-                    by=["priority_number", "timestamp"], ascending=[True, True]
-                ),
+                waitlist_df.sort_values(by=["priority_number", "timestamp"], ascending=[True, True]),
                 use_container_width=True,
             )
     else:
@@ -689,7 +713,7 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
 # ---------- FOOTER ----------
 st.markdown("---")
 st.caption(
-    "Αυτή η πλατφόρμα κρατήσεων αναπτύχθηκε από " "[gfragi](https://github.com/gfragi) "
-    "με χρήση Streamlit, "
+    "Αυτή η πλατφόρμα κρατήσεων αναπτύχθηκε από "
+    "[gfragi](https://github.com/gfragi) με χρήση Streamlit, "
     "[git repo](https://github.com/gfragi/book_seat_pay)."
 )
