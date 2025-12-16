@@ -27,6 +27,28 @@ ADMIN_PASSWORD = "syllogos2025"
 
 
 # ---------- HELPERS ----------
+def validate_payments_csv(df: pd.DataFrame) -> tuple[bool, str]:
+    required = [
+        "timestamp","parent_name","email","child_class",
+        "child_tickets","adult_tickets","total_tickets",
+        "total_amount","payment_method","payment_code",
+        "payment_status","category","priority_number"
+    ]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        return False, f"Λείπουν στήλες: {', '.join(missing)}"
+
+    # basic cleanup / types
+    for col in ["child_tickets","adult_tickets","total_tickets","priority_number"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+    df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce").fillna(0).astype(float)
+
+    # normalize strings
+    for col in ["parent_name","email","child_class","payment_method","payment_code","payment_status","category"]:
+        df[col] = df[col].astype(str).fillna("").str.strip()
+
+    return True, ""
+
 def load_data() -> pd.DataFrame:
     if DATA_FILE.exists():
         df = pd.read_csv(DATA_FILE, dtype={"payment_code": str})
@@ -506,6 +528,38 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
             f"🔔 Προθεσμία πληρωμής για να θεωρούνται οι θέσεις εξασφαλισμένες: "
             f"**{PAYMENT_DEADLINE_LABEL}**."
         )
+
+        st.markdown("---")
+        st.markdown("### ♻️ Επαναφορά πληρωμών από backup CSV (Admin)")
+
+        uploaded = st.file_uploader(
+            "Ανέβασε payments backup CSV",
+            type=["csv"],
+            help="Προσοχή: Αυτό θα αντικαταστήσει πλήρως το τρέχον payments.csv."
+        )
+
+        col_a, col_b = st.columns([1, 2])
+        with col_a:
+            do_restore = st.button("Επαναφορά τώρα", type="primary", disabled=(uploaded is None))
+        with col_b:
+            st.caption("Χρησιμοποίησέ το μόνο αν χάθηκαν δεδομένα μετά από deploy/restart.")
+
+        if do_restore and uploaded is not None:
+            try:
+                new_df = pd.read_csv(uploaded, dtype={"payment_code": str})
+                ok, msg = validate_payments_csv(new_df)
+                if not ok:
+                    st.error(f"Μη έγκυρο αρχείο: {msg}")
+                else:
+                    # optional: make a safety backup of current file
+                    if DATA_FILE.exists():
+                        backup_name = DATA_DIR / f"payments_backup_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                        DATA_FILE.replace(backup_name)
+
+                    save_data(new_df)
+                    st.success("✅ Η επαναφορά ολοκληρώθηκε. Κάνε refresh τη σελίδα για να δεις τα ενημερωμένα στοιχεία.")
+            except Exception as e:
+                st.error(f"Αποτυχία επαναφοράς: {e}")
 
         st.markdown("---")
         st.markdown("### Αναζήτηση & Φίλτρα")
