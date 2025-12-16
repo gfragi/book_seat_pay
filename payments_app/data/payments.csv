@@ -1,2 +1,12 @@
 timestamp,parent_name,email,child_class,child_tickets,adult_tickets,total_tickets,total_amount,payment_method,payment_code,payment_status,category,priority_number
-2025-12-14 17:25:32,Ηλέκτρα Σιφακάκη,electrasif@gmail.com,Γ,2,1,3,30.0,IRIS,EVT-001,pending,interest,0
+2025-12-14 17:25:32,Ηλέκτρα Σιφακάκη,electrasif@gmail.com,Γ,2,1,3,30.0,IRIS,EVT-001,paid,interest,0
+2025-12-16 14:30:35,ΑΝΑΣΤΑΣΙΑ ΧΡΙΣΤΟΠΟΥΛΟΥ,anxristop84@gmail.com,Δ,1,1,2,20.0,IRIS,EVT-002,paid,interest,0
+2025-12-16 14:31:44,Παναγιώτης Γκανιάτσος,pgkaniatsos@gmail.com,Γ,1,1,2,20.0,IRIS,EVT-003,paid,interest,0
+2025-12-16 14:32:08,Tania Siakantari,taniasiak@hotmail.com,Β,1,1,2,20.0,IRIS,EVT-004,paid,interest,0
+2025-12-16 14:34:24,stratosx9@hotmail.com,kellyflouda@hotmail.com,Δ,1,1,2,20.0,Μετρητά,EVT-005,paid,interest,0
+2025-12-16 14:34:57,Παλαιολόγος Ευστρατιος,stratosx9@hotmail.com,Δ,1,2,3,30.0,Μετρητά,EVT-006,pending,interest,0
+2025-12-16 14:35:31,Στεφανούδη Λαμπρινή,stefanoudil@gmail.com,Δ,1,1,3,30.0,Μετρητά,EVT-007,paid,interest,0
+2025-12-16 14:38:56,ΠΟΛΥΧΡΟΝΙΑΔΟΥ ΕΛΕΝΗ,e.polychroniadou@gmail.com,Γ,1,1,2,20.0,IRIS,EVT-010,pending,interest,0
+2025-12-16 14:39:27,ΦΟΎΡΛΑΡΗ ΙΩΑΝΝΑ,joannafoyrlaris@yahoo.gr,Δ,1,1,2,20.0,IRIS,EVT-011,pending,interest,0
+2025-12-16 14:40:05,Μαρία Γιαννιού, leadfromwithin.org@gmail.com, Α,1,1,2,20.0,IRIS,EVT-009,paid,interest,0
+2025-12-16 14:40:45,Φλουδα Κελλυ, kellyflouda@hotmail.com,Δ,1,1,2,20.0,IRIS,EVT-008,paid,interest,0
