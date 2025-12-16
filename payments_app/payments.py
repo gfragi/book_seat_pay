@@ -529,6 +529,48 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
             f"**{PAYMENT_DEADLINE_LABEL}**."
         )
 
+
+        st.markdown("---")
+        st.markdown("### 💶 Σύνολα πληρωμών (μόνο πληρωμένες)")
+
+        df_admin = load_data()
+
+        paid = df_admin[
+            (df_admin["payment_status"] == "paid") &
+            (df_admin["category"] != "waitlist")
+        ].copy()
+
+        # normalize payment_method text
+        paid["payment_method"] = paid["payment_method"].fillna("").astype(str).str.strip().str.lower()
+
+        def method_bucket(x: str) -> str:
+            if "iris" in x:
+                return "IRIS"
+            if "revolut" in x:
+                return "Revolut"
+            if "μετ" in x or "cash" in x:
+                return "Μετρητά"
+            return "Άλλο/Κενό"
+
+        paid["method_bucket"] = paid["payment_method"].apply(method_bucket)
+
+        total_paid_amount = float(paid["total_amount"].sum()) if not paid.empty else 0.0
+        total_paid_seats = int(paid["total_tickets"].sum()) if not paid.empty else 0
+
+        c1, c2 = st.columns(2)
+        c1.metric("Σύνολο πληρωμένων (€)", f"{total_paid_amount:.2f}")
+        c2.metric("Σύνολο πληρωμένων θέσεων", total_paid_seats)
+
+        by_method = (
+            paid.groupby("method_bucket", dropna=False)
+                .agg(total_eur=("total_amount", "sum"), seats=("total_tickets", "sum"), count=("email", "count"))
+                .reset_index()
+                .sort_values("total_eur", ascending=False)
+        )
+
+        st.dataframe(by_method, use_container_width=True)
+
+
         st.markdown("---")
         st.markdown("### ♻️ Επαναφορά πληρωμών από backup CSV (Admin)")
 
