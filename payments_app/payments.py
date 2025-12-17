@@ -13,8 +13,8 @@ DATA_DIR.mkdir(exist_ok=True)
 # Writable storage (Streamlit Cloud-safe)
 APP_STATE_DIR = Path(os.getenv("APP_STATE_DIR", "/tmp")) / "book_seat_pay"
 APP_STATE_DIR.mkdir(parents=True, exist_ok=True)
-
 DB_FILE = APP_STATE_DIR / "payments.sqlite3"
+
 
 # interest stays in repo folder
 LEGACY_CSV = DATA_DIR / "payments.csv"  # optional one-time import if DB is empty
@@ -60,6 +60,29 @@ def validate_payments_csv(df: pd.DataFrame) -> tuple[bool, str]:
 @st.cache_resource
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS payments (
+            timestamp TEXT,
+            parent_name TEXT,
+            email TEXT,
+            child_class TEXT,
+            child_tickets INTEGER,
+            adult_tickets INTEGER,
+            total_tickets INTEGER,
+            total_amount REAL,
+            payment_method TEXT,
+            payment_code TEXT,
+            payment_status TEXT,
+            category TEXT,
+            priority_number INTEGER
+        )
+    """)
+    conn.commit()
+    return conn
+
+def get_write_conn() -> sqlite3.Connection:
+    # force create/writeable (rwc = read-write-create)
+    conn = sqlite3.connect(f"file:{DB_FILE}?mode=rwc", uri=True, check_same_thread=False)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS payments (
             timestamp TEXT,
@@ -142,12 +165,17 @@ def load_data() -> pd.DataFrame:
 
 
 def save_data(df: pd.DataFrame):
-    conn = get_conn()
     df2 = _ensure_columns(df.copy())
-    conn.execute("DELETE FROM payments")
-    conn.commit()
-    df2.to_sql("payments", conn, if_exists="append", index=False)
-    conn.commit()
+
+    conn = get_write_conn()
+    try:
+        conn.execute("DELETE FROM payments")
+        conn.commit()
+        df2.to_sql("payments", conn, if_exists="append", index=False)
+        conn.commit()
+    finally:
+        conn.close()
+
 
 
 def generate_payment_code(df: pd.DataFrame) -> str:
@@ -642,11 +670,12 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
                     st.error(f"Μη έγκυρο αρχείο: {msg}")
                 else:
                     # backup current DB file (best-effort)
+                    st.cache_resource.clear()
+
                     save_data(new_df)
                     st.success("✅ Η επαναφορά ολοκληρώθηκε.")
 
 # reset cached DB connection + rerun
-                    st.cache_resource.clear()
                     st.rerun()
 
             except Exception as e:
