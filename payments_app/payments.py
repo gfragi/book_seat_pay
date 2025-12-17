@@ -3,13 +3,20 @@ import pandas as pd
 import sqlite3
 from pathlib import Path
 from datetime import datetime, date
+import os
 
 # ---------- CONFIG ----------
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-DB_FILE = DATA_DIR / "payments.sqlite3"
+# Writable storage (Streamlit Cloud-safe)
+APP_STATE_DIR = Path(os.getenv("APP_STATE_DIR", "/tmp")) / "book_seat_pay"
+APP_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_FILE = APP_STATE_DIR / "payments.sqlite3"
+
+# interest stays in repo folder
 LEGACY_CSV = DATA_DIR / "payments.csv"  # optional one-time import if DB is empty
 INTEREST_FILE = DATA_DIR / "interest.csv"
 
@@ -608,6 +615,13 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
         st.markdown("---")
         st.markdown("### ♻️ Επαναφορά πληρωμών από backup CSV (Admin)")
 
+        st.download_button(
+        "📥 Backup πληρωμών (CSV)",
+            data=load_data().to_csv(index=False).encode("utf-8-sig"),
+            file_name="payments_backup.csv",
+            mime="text/csv",
+        )
+
         uploaded = st.file_uploader(
             "Ανέβασε payments backup CSV",
             type=["csv"],
@@ -628,15 +642,13 @@ elif mode == "Διαχειριστής - Έλεγχος & Καταχώριση �
                     st.error(f"Μη έγκυρο αρχείο: {msg}")
                 else:
                     # backup current DB file (best-effort)
-                    if DB_FILE.exists():
-                        backup_name = DATA_DIR / f"payments_backup_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sqlite3"
-                        try:
-                            DB_FILE.replace(backup_name)
-                        except Exception:
-                            pass
-
                     save_data(new_df)
-                    st.success("✅ Η επαναφορά ολοκληρώθηκε. Κάνε refresh τη σελίδα για να δεις τα ενημερωμένα στοιχεία.")
+                    st.success("✅ Η επαναφορά ολοκληρώθηκε.")
+
+# reset cached DB connection + rerun
+                    st.cache_resource.clear()
+                    st.rerun()
+
             except Exception as e:
                 st.error(f"Αποτυχία επαναφοράς: {e}")
 
